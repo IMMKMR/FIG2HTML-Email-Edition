@@ -1,40 +1,69 @@
-Below are the steps to get your plugin running. You can also find instructions at:
+# FIG2HTML - Email Edition
 
-  https://www.figma.com/plugin-docs/plugin-quickstart-guide/
+**FIG2HTML** is a powerful Figma plugin designed to convert your Figma designs into production-ready HTML code, with a special focus on **Email Compatibility**. It simplifies the process of creating responsive, table-based layouts that render correctly across major email clients (including Outlook).
 
-This plugin template uses Typescript and NPM, two standard tools in creating JavaScript applications.
+## 🚀 Features
 
-First, download Node.js which comes with NPM. This will allow you to install TypeScript and other
-libraries. You can find the download link here:
+- **Email-Ready Output**: Generates table-based HTML layouts optimized for email clients when "Email Compatibility" is enabled.
+- **Smart Layer Tagging**: Control how specific elements are rendered using special naming conventions.
+- **Asset Management**: Automatically exports images and supports GIF uploads.
+- **Link Handling**: Add clickable links directly from Figma layer names.
+- **Credits System**: Built-in system to manage export usage (includes promo code redemption).
 
-  https://nodejs.org/en/download/
+## 🏷️ Special Layer Tags
 
-Next, install TypeScript using the command:
+Use these tags in your Figma layer names to trigger specific behaviors:
 
-  npm install -g typescript
+| Tag | Description | Usage Example |
+| :--- | :--- | :--- |
+| `[table]` | Renders the group/frame as an HTML `<table>`. Essential for complex layouts. | `[table] Header Section` |
+| `[gif]` | Creates a placeholder for a GIF. You will be prompted to upload the `.gif` file in the plugin UI. | `[gif] hero-animation` |
+| `[link]` | Makes the layer clickable. Append the URL after the tag. | `[link] https://example.com` |
+| `[transparent]` | Exports the layer as a PNG with a transparent background, ignoring temporary fills. | `[transparent] Logo` |
 
-Finally, in the directory of your plugin, get the latest type definitions for the plugin API by running:
+## 🛠️ Installation & Setup
 
-  npm install --save-dev @figma/plugin-typings
+1.  **Prerequisites**: Ensure you have [Node.js](https://nodejs.org/) installed.
+2.  **Install Dependencies**:
+    ```bash
+    npm install
+    ```
+3.  **Build the Plugin**:
+    ```bash
+    npm run build
+    ```
+    *Or run in watch mode for development:*
+    ```bash
+    npm run watch
+    ```
+4.  **Load in Figma**:
+    -   Open Figma and go to **Plugins > Development > Import plugin from manifest...**
+    -   Select the `manifest.json` file located in this project directory.
 
-If you are familiar with JavaScript, TypeScript will look very familiar. In fact, valid JavaScript code
-is already valid Typescript code.
+## 📖 Usage Guide
 
-TypeScript adds type annotations to variables. This allows code editors such as Visual Studio Code
-to provide information about the Figma API while you are writing code, as well as help catch bugs
-you previously didn't notice.
+1.  **Select a Frame**: Click on the top-level Frame you wish to export.
+2.  **Open Plugin**: Run **FIG2HTML** from your plugins menu.
+3.  **Configure Settings**:
+    -   **Email Compatibility**: Toggle this ON if you are creating an email newsletter.
+4.  **Manage Assets**:
+    -   If you used `[gif]` tags, upload the corresponding GIF files in the UI.
+    -   Review any detected links.
+5.  **Export**: Click **Export Selection**.
+    -   The plugin will generate a ZIP file containing the `index.html` and an `images` folder.
 
-For more information, visit https://www.typescriptlang.org/
+## 💳 Credits & Promo Codes
 
-Using TypeScript requires a compiler to convert TypeScript (code.ts) into JavaScript (code.js)
-for the browser to run.
+The plugin operates on a credit system:
+-   **New Users**: Start with **5 free credits**.
+-   **Cost**: 1 credit per export (specifically per table generated).
+-   **Redeem**: Enter promo codes in the UI to top up your balance.
+-   **Admin**: Includes an admin panel for generating codes (requires admin secret).
 
-We recommend writing TypeScript code using Visual Studio code:
+## 💻 Development
 
-1. Download Visual Studio Code if you haven't already: https://code.visualstudio.com/.
-2. Open this directory in Visual Studio Code.
-3. Compile TypeScript to JavaScript: Run the "Terminal > Run Build Task..." menu item,
-    then select "npm: watch". You will have to do this again every time
-    you reopen Visual Studio Code.
+-   **`code.ts`**: Contains the main plugin logic (Figma API interaction, node traversal).
+-   **`ui.html`**: Handles the user interface, HTML post-processing (email compatibility logic), and ZIP generation.
 
-That's it! Visual Studio Code will regenerate the JavaScript file every time you save.
+---
+*Built with TypeScript & Figma Plugin API.*
