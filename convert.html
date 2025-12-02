@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Email Layout Converter v9 - Exact Structure</title>
+<style>
+body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+.container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; }
+.header { background: #2d7ff9; color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }
+.main { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; }
+textarea { width: 100%; height: 500px; padding: 15px; border: 1px solid #ddd; border-radius: 5px; font-family: monospace; }
+button { background: #2d7ff9; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin: 10px 0; }
+.preview { border: 1px solid #ddd; margin: 20px auto 0; width: 800px; height: 600px; display: block; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>Email Layout Converter v9 - Exact Structure</h1>
+    <p>Preserves exact visual hierarchy, containers across nearby positions, positioning, alignments, borders, and scales inner dimensions</p>
+  </div>
+  
+  <div class="main">
+    <div>
+      <h3>Input HTML</h3>
+      <textarea id="inputHtml"></textarea>
+      <button onclick="convertHTML()">Convert</button>
+    </div>
+    <div>
+      <h3>Output HTML</h3>
+      <textarea id="outputHtml" readonly></textarea>
+      <button onclick="copyOutput()">Copy</button>
+    </div>
+  </div>
+
+  <iframe class="preview" id="preview" sandbox="allow-same-origin"></iframe>
+</div>
+
+<script>
+function extractProp(styleStr, prop) {
+  if (!styleStr) return null;
+  const m = styleStr.match(new RegExp(prop + '\\s*:\\s*([^;]+)', 'i'));
+  return m ? m[1].trim() : null;
+}
+
+function scaleInnerHtml(html, scale) {
+  if (scale === 1) return html;
+  const rounded = (n) => Math.round(n * scale);
+  
+  // Scale width/height in styles
+  html = html.replace(/width\s*:\s*(\d+(?:\.\d+)?)\s*px/gi, (match, num) => {
+    return match.replace(num, rounded(parseFloat(num)).toString());
+  });
+  html = html.replace(/height\s*:\s*(\d+(?:\.\d+)?)\s*px/gi, (match, num) => {
+    return match.replace(num, rounded(parseFloat(num)).toString());
+  });
+  
+  // Scale width/height attributes
+  html = html.replace(/width\s*=\s*"(\d+)"/gi, (match, num) => {
+    return match.replace(num, rounded(parseInt(num)).toString());
+  });
+  html = html.replace(/height\s*=\s*"(\d+)"/gi, (match, num) => {
+    return match.replace(num, rounded(parseInt(num)).toString());
+  });
+  
+  return html;
+}
+
+function getCompleteElementInfo(el) {
+  const style = el.getAttribute('style') || '';
+  const top = parseInt(extractProp(style, 'top') || '0');
+  const left = parseInt(extractProp(style, 'left') || '0');
+  let width = parseInt(extractProp(style, 'width')) || 0;
+  let height = parseInt(extractProp(style, 'height')) || 0;
+  
+  // Get background color - check element and child TDs
+  let bgColor = extractProp(style, 'background-color');
+  if (!bgColor && el.tagName === 'TABLE') {
+    const tds = el.querySelectorAll('td');
+    for (let td of tds) {
+      const tdStyle = td.getAttribute('style') || '';
+      bgColor = extractProp(tdStyle, 'background-color');
+      if (bgColor) break;
+    }
+  }
+  
+  // Get border information
+  const border = extractProp(style, 'border') || extractProp(style, 'border-color');
+  const borderRadius = extractProp(style, 'border-radius');
+  
+  // Get text alignment
+  const textAlign = extractProp(style, 'text-align');
+  
+  // Get dimensions from images
+  const img = el.querySelector('img');
+  if (img) {
+    if (!width) width = parseInt(img.getAttribute('width')) || 0;
+    if (!height) height = parseInt(img.getAttribute('height')) || 0;
+  }
+  
+  // Check content type
+  const hasContent = el.textContent && el.textContent.trim() !== '';
+  const hasNbsp = el.innerHTML.includes('&nbsp;');
+  const hasImg = !!img;
+  const hasTextElements = !!el.querySelector('span, div, p, h1, h2, h3, h4, h5, h6');
+  const isEmpty = (hasNbsp && !hasContent && !hasImg && !hasTextElements);
+  
+  // Check if it's a link
+  const isLink = el.tagName === 'A' || el.closest('a');
+  
+  return {
+    top, left, width, height, bgColor, border, borderRadius, textAlign,
+    isEmpty, isLink, hasContent: hasContent || hasImg || hasTextElements,
+    hasImg, hasTextElements, originalElement: el
+  };
+}
+
+function convertHTML(){
+  const input = document.getElementById('inputHtml').value;
+  if(!input) return;
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(input, 'text/html');
+  
+  // Find the main container
+  let relativeDiv = doc.querySelector('div[style*="position:relative"]');
+  if(!relativeDiv) {
+    const allDivs = doc.querySelectorAll('div');
+    relativeDiv = Array.from(allDivs).find(div => {
+      const children = div.querySelectorAll('*[style*="position:absolute"]');
+      return children.length > 0;
+    });
+  }
+  
+  if(!relativeDiv){ alert("No suitable container found."); return; }
+  
+  // Get container dimensions
+  const containerStyle = relativeDiv.getAttribute('style') || '';
+  const containerWidth = parseInt(extractProp(containerStyle, 'width')) || 800;
+  
+  // Get ALL absolutely positioned elements
+  const allElements = Array.from(relativeDiv.querySelectorAll('*')).filter(el => {
+    if (el === relativeDiv) return false;
+    const style = el.getAttribute('style') || '';
+    return (style.includes('position:absolute') || style.includes('position: absolute')) && 
+           !style.includes('display:none');
+  });
+  
+  // Process elements with complete information
+  const elements = allElements.map(el => {
+    const info = getCompleteElementInfo(el);
+    const elementToUse = info.isLink && el.tagName === 'TABLE' ? el.closest('a') : el;
+    
+    return {
+      el: elementToUse,
+      ...info,
+      containerWidth
+    };
+  }).sort((a, b) => a.top - b.top);
+  
+  // Build the email with exact structure preservation
+  const html = buildExactEmail(elements, containerWidth);
+  document.getElementById('outputHtml').value = html;
+  document.getElementById('preview').srcdoc = html;
+}
+
+function buildExactEmail(elements, originalContainerWidth) {
+  const scale = 800 / originalContainerWidth;
+  
+  let out = `<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email</title>
+    <style>
+      body { margin: 0 !important; padding: 0 !important; background-color: #ffffff !important; text-align: center !important; }
+      table { border-collapse: collapse !important; mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+      img { display: block; border: 0; outline: none; text-decoration: none; -ms-interpolation-mode: bicubic; }
+      * { -webkit-text-size-adjust: none; text-size-adjust: none; }
+    </style>
+  </head>
+  <body style="margin: 0; padding: 0; background-color: #ffffff; text-align: center;">
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+      <tr>
+        <td align="center" style="padding: 0; width: 100%; text-align: center;">
+          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="800" align="center" style="width: 800px; max-width: 800px; margin: 0 auto;">`;
+  
+  // Track processed elements
+  const processed = new Set();
+  
+  // Group elements by vertical position (fine grouping)
+  const rows = {};
+  elements.forEach(element => {
+    const rowKey = Math.floor(element.top / 10) * 10;
+    if (!rows[rowKey]) rows[rowKey] = [];
+    rows[rowKey].push(element);
+  });
+  
+  // Process each row from top to bottom
+  Object.keys(rows).sort((a, b) => parseInt(a) - parseInt(b)).forEach(rowKey => {
+    let rowElements = rows[rowKey].filter(el => !processed.has(el.originalElement));
+    if (rowElements.length === 0) return;
+    
+    // Sort row by left for potential horizontal layout
+    rowElements = rowElements.sort((a, b) => a.left - b.left);
+    
+    // Find potential containers (backgrounds that are empty and large)
+    const potentialContainers = rowElements.filter(el => 
+      el.bgColor && el.width > 150 && el.height > 20 && el.isEmpty
+    );
+    
+    // Process potential containers
+    for (let container of potentialContainers) {
+      if (processed.has(container.originalElement)) continue;
+      
+      // Find contained elements across all (unprocessed) with vertical overlap and horizontal containment
+      const containedElements = elements.filter(other => 
+        !processed.has(other.originalElement) &&
+        other !== container &&
+        // Vertical overlap
+        other.top < container.top + container.height &&
+        other.top + other.height > container.top &&
+        // Horizontal containment
+        other.left >= container.left && 
+        other.left + other.width <= container.left + container.width
+      );
+      
+      if (containedElements.length > 0) {
+        // Build container with absolute positioned contents
+        const scaledWidth = Math.round(container.width * scale);
+        const scaledHeight = Math.round(container.height * scale);
+        
+        out += `
+            <tr>
+              <td align="center" style="padding: 5px 0;">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="${scaledWidth}" align="center" style="width: ${scaledWidth}px; background: ${container.bgColor || 'transparent'};${container.border ? ` border: ${container.border};` : ''}${container.borderRadius ? ` border-radius: ${container.borderRadius};` : ''} position: relative; height: ${scaledHeight}px;">
+                  <tr>
+                    <td style="position: relative;">`;
+        
+        // Position contained elements absolutely inside
+        containedElements.forEach(item => {
+          const relativeTop = Math.round((item.top - container.top) * scale);
+          const relativeLeft = Math.round((item.left - container.left) * scale);
+          const itemWidth = Math.round(item.width * scale);
+          
+          let innerHtml = new XMLSerializer().serializeToString(item.el);
+          innerHtml = innerHtml.replace(/xmlns="[^"]*"/g, '')
+                              .replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1')
+                              .replace(/position\s*:\s*absolute\s*;?/gi, '')
+                              .replace(/left\s*:\s*[^;]+;?/gi, '')
+                              .replace(/top\s*:\s*[^;]+;?/gi, '');
+          innerHtml = scaleInnerHtml(innerHtml, scale);
+          
+          const textStyle = item.textAlign ? ` text-align: ${item.textAlign};` : '';
+          const bgStyle = item.bgColor && item.isEmpty ? ` background: ${item.bgColor};` : '';
+          const borderStyle = item.border ? ` border: ${item.border};` : '';
+          const borderRadiusStyle = item.borderRadius ? ` border-radius: ${item.borderRadius};` : '';
+          
+          out += `
+                      <div style="position: absolute; top: ${relativeTop}px; left: ${relativeLeft}px; width: ${itemWidth}px;${textStyle}${bgStyle}${borderStyle}${borderRadiusStyle}">
+                        ${innerHtml.trim()}
+                      </div>`;
+        });
+        
+        out += `
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>`;
+        
+        // Mark as processed
+        processed.add(container.originalElement);
+        containedElements.forEach(c => processed.add(c.originalElement));
+      }
+    }
+    
+    // Process remaining elements in the row (horizontal layout)
+    let remaining = rowElements.filter(el => !processed.has(el.originalElement));
+    if (remaining.length > 0) {
+      const sorted = remaining.map(el => ({
+        ...el,
+        scaledLeft: Math.round(el.left * scale),
+        scaledW: Math.round(el.width * scale)
+      })).sort((a, b) => a.scaledLeft - b.scaledLeft);
+      
+      out += `
+            <tr>
+              <td align="center" style="padding: 5px 0;">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="800" align="center">
+                  <tr>`;
+      
+      // First gap
+      const firstL = sorted[0].scaledLeft;
+      out += `<td width="${firstL}"></td>`;
+      
+      // Elements
+      for (let i = 0; i < sorted.length; i++) {
+        const item = sorted[i];
+        let innerHtml = new XMLSerializer().serializeToString(item.el);
+        innerHtml = innerHtml.replace(/xmlns="[^"]*"/g, '')
+                            .replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1')
+                            .replace(/position\s*:\s*absolute\s*;?/gi, '')
+                            .replace(/left\s*:\s*[^;]+;?/gi, '')
+                            .replace(/top\s*:\s*[^;]+;?/gi, '');
+        innerHtml = scaleInnerHtml(innerHtml, scale);
+        
+        const align = item.textAlign || 'left';
+        const bgStyle = item.bgColor && item.isEmpty ? ` background: ${item.bgColor};` : '';
+        const borderStyle = item.border ? ` border: ${item.border};` : '';
+        const borderRadiusStyle = item.borderRadius ? ` border-radius: ${item.borderRadius};` : '';
+        
+        out += `<td width="${item.scaledW}" valign="top" align="${align}" style="${bgStyle}${borderStyle}${borderRadiusStyle}">
+                  ${innerHtml.trim()}
+                </td>`;
+        
+        // Gap to next
+        if (i < sorted.length - 1) {
+          const prevR = item.scaledLeft + item.scaledW;
+          const nextL = sorted[i + 1].scaledLeft;
+          const gap = nextL - prevR;
+          out += `<td width="${Math.max(1, gap)}"></td>`;
+        }
+      }
+      
+      // Last gap
+      const lastR = sorted[sorted.length - 1].scaledLeft + sorted[sorted.length - 1].scaledW;
+      const lastGap = 800 - lastR;
+      out += `<td width="${Math.max(1, lastGap)}"></td>`;
+      
+      out += `
+                  </tr>
+                </table>
+              </td>
+            </tr>`;
+    }
+  });
+  
+  out += `
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+  
+  return out;
+}
+
+function copyOutput(){
+  const t = document.getElementById('outputHtml');
+  t.select();
+  document.execCommand('copy');
+  alert('Copied!');
+}
+</script>
+</body>
+</html>

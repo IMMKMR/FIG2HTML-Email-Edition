@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Layout Converter</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; }
+        .header { background: #f16522; color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }
+        .main { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; }
+        textarea { width: 100%; height: 500px; padding: 15px; border: 1px solid #ddd; border-radius: 5px; font-family: monospace; }
+        button { background: #f16522; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin: 10px 0; }
+        .preview { border: 1px solid #ddd; padding: 20px; margin-top: 20px; min-height: 200px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Email Layout Converter</h1>
+            <p>Convert absolute positioning to proper table layout with overlapping support</p>
+        </div>
+        
+        <div class="main">
+            <div>
+                <h3>Input HTML</h3>
+                <textarea id="inputHtml"></textarea>
+                <button onclick="convertHTML()">Convert to Email Format</button>
+            </div>
+            <div>
+                <h3>Converted HTML</h3>
+                <textarea id="outputHtml" readonly></textarea>
+                <button onclick="copyToClipboard()">Copy to Clipboard</button>
+            </div>
+        </div>
+        
+        <div class="preview" id="preview">
+            Preview will appear here...
+        </div>
+    </div>
+
+<script>
+/* -------------------------------------------------------------
+   Utility helpers (enhanced with alignment extraction)
+   ------------------------------------------------------------- */
+function cleanStyle(styleStr, propsToRemove) {
+    if (!styleStr) return '';
+    const rules = styleStr.split(';').map(r => r.trim()).filter(r => r);
+    const cleaned = rules.map(rule => {
+        const parts = rule.split(':');
+        if (parts.length < 2) return null;
+        const prop = parts[0].trim().toLowerCase();
+        const val  = parts.slice(1).join(':').trim();
+        if (!propsToRemove.includes(prop)) return `${parts[0].trim()}:${val}`;
+        return null;
+    }).filter(Boolean);
+    return cleaned.join('; ') + (cleaned.length ? ';' : '');
+}
+function extractProp(styleStr, prop) {
+    const m = styleStr.match(new RegExp(`${prop}\\s*:\\s*([^;]+)`, 'i'));
+    return m ? m[1].trim() : null;
+}
+// New: Extract alignment props
+function extractAlignment(styleStr, el) {
+    const textAlign = extractProp(styleStr, 'text-align') || el.getAttribute('align') || 'left';
+    const verticalAlign = extractProp(styleStr, 'vertical-align') || el.getAttribute('valign') || 'top';
+    return { textAlign, verticalAlign };
+}
+// Enhanced: Get height including padding for alignment safety
+function getElementHeight(el) {
+    const style = el.getAttribute('style') || '';
+    let height = parseInt(extractProp(style, 'height') || '0');
+    if (!height) {
+        const serialized = new XMLSerializer().serializeToString(el);
+        const heightAttrMatch = serialized.match(/height\s*=\s*"(\d+)"/i);
+        height = heightAttrMatch ? parseInt(heightAttrMatch[1]) : 0;
+    }
+    // Add padding-top/bottom if present
+    const padTop = parseInt(extractProp(style, 'padding-top') || '0');
+    const padBottom = parseInt(extractProp(style, 'padding-bottom') || '0');
+    return (height || 100) + padTop + padBottom; // Default 100 if unknown
+}
+
+/* -------------------------------------------------------------
+   Main conversion
+   ------------------------------------------------------------- */
+function convertHTML() {
+    const inputHtml = document.getElementById('inputHtml').value;
+    if (!inputHtml) return;
+    try {
+        const converted = convertEmailLayout(inputHtml);
+        document.getElementById('outputHtml').value = converted;
+        document.getElementById('preview').innerHTML = converted;
+    } catch (e) {
+        alert('Conversion error: ' + e.message);
+    }
+}
+function copyToClipboard() {
+    const ta = document.getElementById('outputHtml');
+    ta.select();
+    document.execCommand('copy');
+    alert('Copied to Clipboard!');
+}
+
+/* -------------------------------------------------------------
+   Core layout conversion
+   ------------------------------------------------------------- */
+function convertEmailLayout(html) {
+    const parser = new DOMParser();
+    const doc    = parser.parseFromString(html, 'text/html');
+
+    /* ---- detect container width ---------------------------- */
+    const mainContainer = doc.querySelector('table[width]');
+    let containerWidth = '600';
+    if (mainContainer) {
+        const attrW = mainContainer.getAttribute('width');
+        const styleW = mainContainer.getAttribute('style')?.match(/width\s*:\s*(\d+)px/);
+        containerWidth = attrW || (styleW ? styleW[1] : '600');
+    }
+    const relativeDiv = doc.querySelector('div[style*="position:relative"]');
+    if (!relativeDiv) throw new Error('No relative container found');
+
+    /* Border adjustment */
+    const borderWidth = 1; // px per side
+    const innerWidth = parseInt(containerWidth) - 2 * borderWidth;
+
+    /* ---- collect absolutely-positioned tables --------------------- */
+    const allTables = Array.from(relativeDiv.querySelectorAll('table'));
+    const positionedTables = allTables.filter(t => {
+        const s = (t.getAttribute('style') || '').toLowerCase();
+        return /position\s*:\s*absolute/i.test(s);
+    });
+
+    const positionedElements = [];
+    let minHeightNeeded = 0; // Track max bottom edge
+
+    positionedTables.forEach(table => {
+        const style = table.getAttribute('style') || '';
+        const top   = parseInt(extractProp(style, 'top')  || '0');
+        const left  = parseInt(extractProp(style, 'left') || '0');
+        const width = parseInt((extractProp(style, 'width') || innerWidth).replace(/[^\d]/g, ''));
+
+        // Extract alignment before cleaning
+        const alignment = extractAlignment(style, table);
+        const alignAttr = table.getAttribute('align') || '';
+        const valignAttr = table.getAttribute('valign') || '';
+
+        // clean positioning out of the original table (preserve text-align etc.)
+        const cleaned = cleanStyle(style, ['position','top','left']);
+        table.setAttribute('style', cleaned);
+        if (alignAttr) table.setAttribute('align', alignAttr);
+        if (valignAttr) table.setAttribute('valign', valignAttr);
+
+        let el = table;
+        const parent = table.parentNode;
+        if (parent && parent.tagName === 'A' && parent.getAttribute('href')) {
+            el = parent;
+            // Inherit alignment to <a> if needed
+            if (!extractProp(parent.getAttribute('style') || '', 'text-align')) {
+                parent.setAttribute('style', (parent.getAttribute('style') || '') + `;text-align:${alignment.textAlign};`);
+            }
+        }
+        
+        const elHeight = getElementHeight(el);
+        const bottomEdge = top + elHeight;
+        if (bottomEdge > minHeightNeeded) minHeightNeeded = bottomEdge;
+
+        positionedElements.push({
+            el, top, left, width: Math.min(width, innerWidth), height: elHeight,
+            alignment, alignAttr, valignAttr
+        });
+    });
+
+    // sort top→left
+    positionedElements.sort((a,b) => a.top - b.top || a.left - b.left);
+
+    // Final height
+    let containerHeight = minHeightNeeded + 2 * borderWidth + 10;
+    const innerHeight = containerHeight - 2 * borderWidth;
+
+    return buildEmailStructure(containerWidth, containerHeight, innerWidth, innerHeight, positionedElements, doc);
+}
+
+/* -------------------------------------------------------------
+   Build final email HTML (with alignment preservation)
+   ------------------------------------------------------------- */
+function buildEmailStructure(containerWidth, containerHeight, innerWidth, innerHeight, positionedElements, originalDoc) {
+    const serialize = node => new XMLSerializer().serializeToString(node).replace(/xmlns="[^"]*"/g, '');
+
+    let html = `<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-apple-disable-message-reformatting">
+<title>Mailer</title>
+<!--[if gte mso 9]>
+<xml>
+  <o:OfficeDocumentSettings>
+    <o:AllowPNG/>
+    <o:PixelsPerInch>96</o:PixelsPerInch>
+  </o:OfficeDocumentSettings>
+</xml>
+<![endif]-->
+<style>
+    body{margin:0;padding:0;background:transparent;}
+    table{border-collapse:collapse;mso-table-lspace:0pt;mso-table-rspace:0pt;}
+    td{padding:0;vertical-align:top;}
+    img{-ms-interpolation-mode:bicubic;border:0;display:block;}
+    .email-container span{line-height:1.2 !important;}
+    .email-container td{padding-bottom:5px !important;vertical-align:top !important; text-align:inherit !important;}
+    .email-container table[style*="top:811px"] td{padding-top:10px !important;}
+    .email-container a{display:block !important;text-decoration:none !important;pointer-events:auto !important;}
+    .email-container { border: 1px solid #dddddd !important; box-sizing: border-box; }
+    .email-container td, .email-container table { text-align: inherit !important; vertical-align: inherit !important; }
+    @media screen and (max-width:480px){
+        .email-container td{padding:0 10px !important;text-align:center !important;}
+        .email-container img{width:100% !important;height:auto !important;}
+    }
+</style>
+</head>
+<body style="margin:0;padding:0;background:transparent;">
+<center>
+<!--[if mso]>
+<table role="presentation" border="0" cellpadding="0" cellspacing="0" width="${containerWidth}"><tr><td>
+<![endif]-->
+<table role="presentation" border="0" cellpadding="0" cellspacing="0" width="${containerWidth}"
+       style="width:${containerWidth}px;height:${containerHeight}px;">
+  <tr>
+    <td bgcolor="#ffffff" width="${containerWidth}" height="${containerHeight}"
+        valign="top" class="email-container"
+        style="position:relative;background:#fff;border:1px solid #dddddd;box-sizing:border-box;width:${innerWidth}px;height:${innerHeight}px;">
+      <!--[if gte mso 9]>
+      <v:rect xmlns:v="urn:schemas-microsoft-com:vml" fill="true" stroke="false"
+              style="width:${containerWidth}px;height:${containerHeight}px;">
+        <v:fill type="frame" src="" color="#ffffff"/>
+        <v:textbox inset="0,0,0,0">
+      <![endif]-->
+
+      ${positionedElements.map(({el, top, left, width, alignment}) => {
+          const rightPad = innerWidth - left - width;
+          const innerHTML = serialize(el);
+          const alignStyle = `text-align:${alignment.textAlign}; vertical-align:${alignment.verticalAlign};`;
+
+          if (el.tagName === 'A') {
+              return `
+      <table role="presentation" border="0" cellpadding="0" cellspacing="0"
+             style="position:absolute;top:${top}px;left:${left}px;width:${width}px;">
+        <tr>
+          <td style="padding:0; ${alignStyle}">
+            ${innerHTML}
+          </td>
+        </tr>
+      </table>`;
+          } else {
+              return `
+      <table role="presentation" border="0" cellpadding="0" cellspacing="0"
+             style="position:absolute;top:${top}px;left:0;width:${innerWidth}px;">
+        <tr>
+          <td width="${left}" style="width:${left}px;"></td>
+          <td width="${width}" style="width:${width}px; ${alignStyle}">${innerHTML}</td>
+          <td width="${rightPad}" style="width:${rightPad}px;"></td>
+        </tr>
+      </table>`;
+          }
+      }).join('\n')}
+
+      <!--[if gte mso 9]>
+        </v:textbox>
+      </v:rect>
+      <![endif]-->
+    </td>
+  </tr>
+</table>
+<!--[if mso]>
+</td></tr></table>
+<![endif]-->
+</center>
+</body>
+</html>`;
+    return html;
+}
+
+/* ------------------------------------------------------------- */
+document.getElementById('inputHtml').value = '';
+</script>
+</body>
+</html>

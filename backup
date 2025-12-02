@@ -1,0 +1,430 @@
+// This is the main logic for the Figma plugin.
+// It runs in the Figma backend and communicates with the UI.
+
+// Show the UI when the plugin is first run.
+figma.showUI(__html__, { width: 340, height: 420, themeColors: true });
+
+// --- Type Definitions ---
+interface Asset {
+  name: string;
+  data: Uint8Array;
+}
+
+// Type guard to narrow SceneNode to types with children
+function hasChildren(node: SceneNode): node is FrameNode | GroupNode | ComponentNode | InstanceNode {
+  return 'children' in node;
+}
+
+// --- Message Handling ---
+figma.ui.onmessage = async (msg) => {
+  if (msg.type === 'export-selection') {
+    try {
+      await processSelection(msg.useTableLayout || false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'An unknown error occurred.';
+      figma.ui.postMessage({ type: 'error', message });
+      console.error(error);
+    }
+  }
+};
+
+// --- Core Logic ---
+
+/**
+ * Main function to process the user's selection.
+ * @param useTableLayout - Whether to use table-based layout for email compatibility.
+ */
+async function processSelection(useTableLayout: boolean = false) {
+  figma.ui.postMessage({ type: 'progress', message: 'Processing selection...' });
+
+  const selection = figma.currentPage.selection;
+
+  if (selection.length === 0) {
+    figma.ui.postMessage({ type: 'error', message: 'Please select at least one layer.' });
+    return;
+  }
+
+  figma.ui.postMessage({ type: 'progress', message: `Selected ${selection.length} layer(s). Calculating bounding box...` });
+
+  // --- Bounding Box Calculation ---
+  let overallBbox = null;
+  for (const node of selection) {
+    if (node.absoluteBoundingBox) {
+      if (!overallBbox) {
+        overallBbox = { ...node.absoluteBoundingBox };
+      } else {
+        overallBbox.x = Math.min(overallBbox.x, node.absoluteBoundingBox.x);
+        overallBbox.y = Math.min(overallBbox.y, node.absoluteBoundingBox.y);
+        const right = Math.max(overallBbox.x + overallBbox.width, node.absoluteBoundingBox.x + node.absoluteBoundingBox.width);
+        const bottom = Math.max(overallBbox.y + overallBbox.height, node.absoluteBoundingBox.y + node.absoluteBoundingBox.height);
+        overallBbox.width = right - overallBbox.x;
+        overallBbox.height = bottom - overallBbox.y;
+      }
+    }
+  }
+
+  if (!overallBbox) {
+    figma.ui.postMessage({ type: 'error', message: 'Could not determine the bounds of the selection.' });
+    return;
+  }
+
+  figma.ui.postMessage({ type: 'progress', message: `Bounding box calculated: ${overallBbox.width.toFixed(0)}x${overallBbox.height.toFixed(0)}px` });
+
+  const assets: Asset[] = [];
+  const htmlElements: string[] = [];
+  let elementCounter = 0;
+
+  // --- Node Processing ---
+  const reversedSelection = [...selection].reverse();
+
+  figma.ui.postMessage({ type: 'progress', message: 'Processing nodes (this may take a moment)...' });
+
+  for (const node of reversedSelection) {
+    elementCounter = await processNode(node, overallBbox, assets, htmlElements, elementCounter);
+  }
+
+  figma.ui.postMessage({ type: 'progress', message: `Processed ${htmlElements.length} elements. Generated ${assets.length} assets.` });
+
+  // --- HTML Generation ---
+  const htmlContent = generateFinalHTML(htmlElements, overallBbox.width, overallBbox.height, useTableLayout);
+  const filename = slugify(figma.currentPage.name);
+
+  figma.ui.postMessage({ type: 'export-result', html: htmlContent, assets, filename });
+}
+
+/**
+ * Recursively processes a single node, converting it to an HTML element or an image asset.
+ */
+async function processNode(
+  node: SceneNode,
+  overallBbox: { x: number; y: number },
+  assets: Asset[],
+  htmlElements: string[],
+  counter: number
+): Promise<number> {
+  if (!node.visible) {
+    return counter;
+  }
+
+  const nodeBbox = node.absoluteBoundingBox;
+  if (!nodeBbox) return counter;
+
+  const relativeX = nodeBbox.x - overallBbox.x;
+  const relativeY = nodeBbox.y - overallBbox.y;
+
+  let shouldProcessChildren = true;
+
+  let isMaskedGroup = false;
+  if (hasChildren(node)) {
+    isMaskedGroup = node.children.some(child => 'isMask' in child && child.isMask);
+  }
+
+  switch (node.type) {
+    case 'TEXT':
+      figma.ui.postMessage({ type: 'progress', message: `Exporting text layer: ${node.name}` });
+      if (node.width > 0 && node.height > 0) {
+        try {
+          const textHtml = await generateTextHTML(node as TextNode, relativeX, relativeY);
+          htmlElements.push(wrapInLinkIfNecessary(node, textHtml));
+          shouldProcessChildren = false;
+        } catch (e) {
+          const message = e instanceof Error ? e.message : 'Unknown text export error';
+          console.warn(`Could not export text node "${node.name}": ${message}`);
+        }
+      }
+      break;
+
+    case 'VECTOR':
+    case 'STAR':
+    case 'LINE':
+    case 'ELLIPSE':
+    case 'POLYGON':
+    case 'RECTANGLE':
+      figma.ui.postMessage({ type: 'progress', message: `Exporting layer as image: ${node.name}` });
+      if (node.width > 0 && node.height > 0) {
+        counter++;
+        const assetName = `image-${counter}.png`;
+        try {
+          const data = await node.exportAsync({ format: 'PNG', constraint: { type: 'SCALE', value: 1 } });
+          assets.push({ name: assetName, data });
+          const imageHtml = generateImageHTML(assetName, relativeX, relativeY, nodeBbox.width, nodeBbox.height);
+          htmlElements.push(wrapInLinkIfNecessary(node, imageHtml));
+          shouldProcessChildren = false;
+        } catch (e) {
+          const message = e instanceof Error ? e.message : 'Unknown export error';
+          console.warn(`Could not export node "${node.name}": ${message}`);
+        }
+      }
+      break;
+
+    case 'FRAME':
+    case 'COMPONENT':
+    case 'INSTANCE':
+    case 'GROUP':
+      let hasImageFill = false;
+      if ('fills' in node) {
+        hasImageFill = (node.fills as readonly Paint[])?.some(f => f.type === 'IMAGE');
+      }
+
+      if (node.type === 'GROUP' || isMaskedGroup || hasImageFill) {
+        figma.ui.postMessage({ type: 'progress', message: `Flattening ${node.type.toLowerCase()}: ${node.name}` });
+        counter++;
+        const assetName = `image-${counter}.png`;
+        try {
+          const data = await node.exportAsync({ format: 'PNG', constraint: { type: 'SCALE', value: 1 } });
+          assets.push({ name: assetName, data });
+          const imageHtml = generateImageHTML(assetName, relativeX, relativeY, nodeBbox.width, nodeBbox.height);
+          htmlElements.push(wrapInLinkIfNecessary(node, imageHtml));
+          shouldProcessChildren = false;
+        } catch (e) {
+          const message = e instanceof Error ? e.message : 'Unknown export error';
+          console.warn(`Could not export node "${node.name}": ${message}`);
+        }
+      } else {
+        figma.ui.postMessage({ type: 'progress', message: `Processing container: ${node.name}` });
+      }
+      break;
+  }
+
+  if (shouldProcessChildren && hasChildren(node)) {
+    for (const child of node.children) {
+      counter = await processNode(child, overallBbox, assets, htmlElements, counter);
+    }
+  }
+
+  return counter;
+}
+
+/**
+ * Generates an HTML string for a text node, handling multiple colors.
+ * @param node - The TextNode.
+ * @param x - The relative x position.
+ * @param y - The relative y position.
+ * @returns An HTML string.
+ */
+async function generateTextHTML(node: TextNode, x: number, y: number): Promise<string> {
+  await figma.loadFontAsync(node.fontName as FontName);
+
+  // Base styles for the container div
+  const style: Record<string, string | number> = {
+    position: 'absolute',
+    left: `${x}px`,
+    top: `${y}px`,
+    width: `${node.width}px`,
+    height: `${node.height}px`,
+    'font-size': `${String(node.fontSize)}px`,
+    'font-family': `'${(node.fontName as FontName).family}', sans-serif`,
+    'text-align': node.textAlignHorizontal.toLowerCase(),
+  };
+
+  // Handle font weight
+  const fontWeight = node.fontWeight as number;
+  if (fontWeight) {
+    style['font-weight'] = fontWeight;
+  }
+
+  // Handle line height
+  let lineHeight = 'normal';
+  if (typeof node.lineHeight !== 'symbol' && 'unit' in node.lineHeight && 'value' in node.lineHeight) {
+    if (node.lineHeight.unit === 'PIXELS') {
+      lineHeight = `${node.lineHeight.value}px`;
+    } else if (node.lineHeight.unit === 'PERCENT') {
+      lineHeight = `${node.lineHeight.value / 100}`;
+    }
+  }
+  style['line-height'] = lineHeight;
+
+  // Handle letter spacing
+  let letterSpacing = '0';
+  if (typeof node.letterSpacing !== 'symbol' && 'unit' in node.letterSpacing && 'value' in node.letterSpacing) {
+    if (node.letterSpacing.unit === 'PIXELS') {
+      letterSpacing = `${node.letterSpacing.value}px`;
+    } else if (node.letterSpacing.unit === 'PERCENT') {
+      letterSpacing = `${node.letterSpacing.value / 100}em`;
+    }
+  }
+  style['letter-spacing'] = letterSpacing;
+
+  // Handle text content and colors
+  let textContent = '';
+  if (node.fills === figma.mixed) {
+    // Handle mixed fills (multiple colors)
+    const textLength = node.characters.length;
+    let currentIndex = 0;
+
+    while (currentIndex < textLength) {
+      // Get fills for the current character
+      const currentFills = node.getRangeFills(currentIndex, currentIndex + 1);
+      if (!currentFills || currentFills === figma.mixed || currentFills.length === 0 || currentFills[0].type !== 'SOLID') {
+        console.warn(`No valid SOLID fill for character at index ${currentIndex}`);
+        currentIndex++;
+        continue;
+      }
+
+      // Find the range of characters with the same fill
+      let rangeEnd = currentIndex + 1;
+      while (rangeEnd < textLength) {
+        const nextFills = node.getRangeFills(rangeEnd, rangeEnd + 1);
+        if (
+          nextFills === figma.mixed ||
+          nextFills.length === 0 ||
+          nextFills[0].type !== 'SOLID' ||
+          nextFills[0].color.r !== currentFills[0].color.r ||
+          nextFills[0].color.g !== currentFills[0].color.g ||
+          nextFills[0].color.b !== currentFills[0].color.b ||
+          nextFills[0].opacity !== currentFills[0].opacity
+        ) {
+          break;
+        }
+        rangeEnd++;
+      }
+
+      const rangeText = node.characters.slice(currentIndex, rangeEnd);
+      const fill = currentFills[0] as SolidPaint;
+      const { r, g, b } = fill.color;
+      const a = fill.opacity ?? 1;
+      const colorStyle = `color: rgba(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)}, ${a});`;
+
+      // Debug log to trace color values
+      console.log(`Text range [${currentIndex}:${rangeEnd}]: "${rangeText}", Color: rgba(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)}, ${a})`);
+
+      // Escape HTML characters and replace newlines with <br>
+      const escapedText = rangeText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+      textContent += `<span style="${colorStyle}">${escapedText}</span>`;
+      currentIndex = rangeEnd;
+    }
+  } else {
+    // Single-color text
+    const firstFill = (node.fills as readonly Paint[])?.[0];
+    if (firstFill && firstFill.type === 'SOLID') {
+      const { r, g, b } = firstFill.color;
+      const a = firstFill.opacity ?? 1;
+      style.color = `rgba(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)}, ${a})`;
+      console.log(`Single-color text: "${node.characters}", Color: rgba(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)}, ${a})`);
+    }
+    // Escape HTML characters and replace newlines with <br>
+    textContent = node.characters.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+  }
+
+  const styleString = Object.entries(style).map(([k, v]) => `${k}: ${v};`).join(' ');
+
+  // Debug log to inspect final HTML
+  console.log(`Generated text HTML: <div style="${styleString}">${textContent}</div>`);
+
+  return `<div style="${styleString}">${textContent}</div>`;
+}
+
+/**
+ * Wraps a string of HTML in an anchor tag if the node name is formatted as a link.
+ */
+function wrapInLinkIfNecessary(node: SceneNode, html: string): string {
+  if (node.name.startsWith('[link] ')) {
+    let url = node.name.substring(7).trim();
+    if (url) {
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        url = `https://${url}`;
+      }
+      // Extract dimensions and position from child element's style
+      const styleMatch = html.match(/style="([^"]*)"/);
+      let style = 'position: absolute; display: block;';
+      if (styleMatch) {
+        // Extract position and size properties only
+        const childStyles = styleMatch[1].split(';').filter(s => {
+          const prop = s.split(':')[0].trim();
+          return ['position', 'left', 'top', 'width', 'height'].includes(prop);
+        }).join(';');
+        style = `${childStyles}; display: block; text-decoration: none;`;
+      }
+      // Ensure child element is positioned relatively within the <a> tag
+      const childHtml = html.replace(/style="([^"]*)"/, `style="$1; position: relative; left: 0; top: 0;"`);
+      return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="${style}">${childHtml}</a>`;
+    }
+  }
+  return html;
+}
+
+/**
+ * Generates an HTML <img> tag for an exported asset, preserving aspect ratio.
+ */
+function generateImageHTML(assetName: string, x: number, y: number, width: number, height: number): string {
+  const style = `position: absolute; left: ${x}px; top: ${y}px; width: ${width}px; height: ${height}px; object-fit: contain;`;
+  return `<img src="./images/${assetName}" style="${style}" alt="${assetName.split('.')[0]}">`;
+}
+
+/**
+ * Creates the final HTML document string, with option for table-based layout.
+ * @param elements - Array of HTML elements.
+ * @param width - Width of the bounding box.
+ * @param height - Height of the bounding box.
+ * @param useTableLayout - Whether to use table-based layout for email compatibility.
+ */
+function generateFinalHTML(elements: string[], width: number, height: number, useTableLayout: boolean = false): string {
+  if (useTableLayout) {
+    // Table-based layout for email compatibility
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Figma Export</title>
+    <style>
+        body { margin: 0; padding: 0; display: flex; justify-content: center; align-items: flex-start; font-family: sans-serif; }
+        table { border-collapse: collapse; width: ${width}px; height: ${height}px; }
+        td { position: relative; padding: 0; }
+        a { display: block; text-decoration: none; position: absolute; }
+        img { display: block; object-fit: contain; width: 100%; height: 100%; }
+        div { display: block; width: 100%; height: 100%; }
+    </style>
+</head>
+<body>
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="width: ${width}px; height: ${height}px;">
+        <tr>
+            <td style="position: relative; width: ${width}px; height: ${height}px;">
+                ${elements.join('\n                ')}
+            </td>
+        </tr>
+    </table>
+</body>
+</html>`;
+  } else {
+    // Default div-based layout
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Figma Export</title>
+    <style>
+        body { margin: 0; padding: 0; display: flex; justify-content: center; align-items: flex-start; font-family: sans-serif; }
+        #figma-export-container {
+            position: relative;
+            width: ${width}px;
+            height: ${height}px;
+            overflow: hidden;
+        }
+        a { display: block; text-decoration: none; position: absolute; }
+        img { display: block; object-fit: contain; width: 100%; height: 100%; }
+        div { display: block; width: 100%; height: 100%; }
+    </style>
+</head>
+<body>
+    <div id="figma-export-container">
+        ${elements.join('\n        ')}
+    </div>
+</body>
+</html>`;
+  }
+}
+
+/**
+ * A simple slugify function to create safe filenames.
+ */
+function slugify(text: string): string {
+  return text
+    .toString()
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^\w\-]+/g, '')
+    .replace(/\-\-+/g, '-');
+}

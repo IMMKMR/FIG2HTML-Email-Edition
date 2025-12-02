@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "target": "es6",
+    "module": "commonjs",
+    "strict": true,
+    "types": ["@figma/plugin-typings"],
+    "lib": ["es6", "dom", "es2019"],
+    "skipLibCheck": true
+  }
+}

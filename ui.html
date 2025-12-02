@@ -1,0 +1,1214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fig2HTML</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #f8f8fa;
+            --card-bg: #ffffff;
+            --text-primary: #1c1c1e;
+            --text-secondary: #8a8a8e;
+            --accent-blue: #007aff;
+            --accent-green: #34c759;
+            --accent-orange: #ff9500;
+            --accent-red: #ff3b30;
+            --separator-color: #ebebf0;
+            --disabled-color: #d1d1d6;
+            --border-radius: 12px;
+            --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        body {
+            font-family: var(--font-family);
+            margin: 0;
+            padding: 20px;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        .container {
+            width: 100%;
+            max-width: 500px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .header {
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 20px;
+            font-weight: 700;
+            margin: 0 0 4px 0;
+        }
+        .header p {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin: 0;
+        }
+        .card {
+            background-color: var(--card-bg);
+            border-radius: var(--border-radius);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            border: 1px solid var(--separator-color);
+            overflow: hidden;
+        }
+        .card__header {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--separator-color);
+        }
+        .card__header h4 {
+            margin: 0;
+            font-size: 15px;
+            font-weight: 600;
+        }
+        .card__body {
+            padding: 16px;
+        }
+        .credits-card .card__body {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+        .credits-info .credits-label {
+            font-size: 14px;
+            font-weight: 500;
+            margin: 0;
+        }
+        .credits-info .credits-sublabel {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin: 4px 0 0 0;
+        }
+        .credits-info .credits-label.credits-low {
+            color: var(--accent-orange);
+        }
+        .credits-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .credits-actions .btn-secondary {
+            background: none;
+            border: 1px solid var(--separator-color);
+            color: var(--text-primary);
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            padding: 6px 12px;
+            border-radius: 8px;
+            transition: background-color 0.2s, color 0.2s;
+        }
+        .credits-actions .btn-secondary:hover {
+            background-color: var(--bg-color);
+        }
+        .promo-card .card__body {
+            display: flex;
+            gap: 8px;
+        }
+        .promo-input {
+            flex-grow: 1;
+            padding: 8px 10px;
+            font-size: 13px;
+            border-radius: 6px;
+            border: 1px solid var(--separator-color);
+            box-sizing: border-box;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .promo-input:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.2);
+        }
+        .promo-btn {
+            background-color: var(--accent-blue);
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .promo-btn:hover:not(:disabled) {
+            background-color: #006ae0;
+        }
+        .promo-btn:disabled {
+            background-color: var(--disabled-color);
+            cursor: not-allowed;
+        }
+        .admin-panel {
+            display: none;
+        }
+        .admin-panel.active {
+            display: block;
+        }
+        .admin-panel .card__body {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .admin-input-group {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .admin-input {
+            flex-grow: 1;
+            padding: 8px 10px;
+            font-size: 13px;
+            border-radius: 6px;
+            border: 1px solid var(--separator-color);
+            box-sizing: border-box;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .admin-input:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.2);
+        }
+        .admin-btn {
+            background-color: var(--accent-orange);
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .admin-btn:hover:not(:disabled) {
+            background-color: #e08600;
+        }
+        .admin-btn:disabled {
+            background-color: var(--disabled-color);
+            cursor: not-allowed;
+        }
+        .admin-result {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 8px;
+        }
+        .setting-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .setting-row label {
+            font-size: 14px;
+        }
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 51px;
+            height: 31px;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #e9e9eb;
+            border-radius: 34px;
+            transition: .2s;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 27px;
+            width: 27px;
+            left: 2px;
+            bottom: 2px;
+            background-color: white;
+            border-radius: 50%;
+            transition: .2s;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+        }
+        input:checked + .slider {
+            background-color: var(--accent-green);
+        }
+        input:checked + .slider:before {
+            transform: translateX(20px);
+        }
+        .card__body > *:not(:last-child) {
+            margin-bottom: 12px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--separator-color);
+        }
+        .gif-uploader-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .gif-uploader-item .label {
+            font-size: 13px;
+            font-weight: 500;
+            flex-grow: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            padding-right: 8px;
+        }
+        .gif-uploader-item .upload-button {
+            background-color: var(--bg-color);
+            color: var(--accent-blue);
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            border: 1px solid var(--separator-color);
+        }
+        .gif-uploader-item .upload-button.status-uploaded {
+            background-color: var(--accent-green);
+            color: white;
+            border-color: var(--accent-green);
+        }
+        .link-editor-item {
+            display: grid;
+            grid-template-columns: 44px 1fr;
+            gap: 12px;
+            align-items: center;
+        }
+        .link-preview {
+            width: 44px;
+            height: 44px;
+            background-color: var(--bg-color);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            border: 1px solid var(--separator-color);
+        }
+        .link-preview img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .link-input {
+            width: 100%;
+            padding: 8px 10px;
+            font-size: 13px;
+            border-radius: 6px;
+            border: 1px solid var(--separator-color);
+            box-sizing: border-box;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .link-input:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.2);
+        }
+        .status-area {
+            width: 100%;
+            padding: 8px 0;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 4px;
+            background-color: var(--separator-color);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        .progress-bar__fill {
+            width: 0%;
+            height: 100%;
+            background-color: var(--accent-blue);
+            transition: width 0.3s ease;
+        }
+        .status-text {
+            font-size: 12px;
+            color: var(--text-secondary);
+            text-align: center;
+            margin-top: 8px;
+            min-height: 16px;
+        }
+        .footer button {
+            width: 100%;
+            background-color: var(--accent-blue);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            padding: 12px 16px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .footer button:hover:not(:disabled) {
+            background-color: #006ae0;
+        }
+        .footer button:disabled {
+            background-color: var(--disabled-color);
+            cursor: not-allowed;
+        }
+        .reset-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .reset-modal-content {
+            background-color: var(--card-bg);
+            border-radius: var(--border-radius);
+            padding: 20px;
+            width: 90%;
+            max-width: 300px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+        .reset-modal-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            text-align: center;
+        }
+        .reset-modal-input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid var(--separator-color);
+            border-radius: 6px;
+            font-size: 14px;
+            margin-bottom: 12px;
+            box-sizing: border-box;
+        }
+        .reset-modal-input:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.2);
+        }
+        .reset-modal-buttons {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+        .reset-modal-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s, opacity 0.2s;
+        }
+        .reset-modal-btn.cancel {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+        }
+        .reset-modal-btn.reset {
+            background-color: var(--accent-orange);
+            color: white;
+        }
+        .reset-modal-btn:hover {
+            opacity: 0.85;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>Fig2HTML</h1>
+            <p>Convert Figma selections to code.</p>
+        </header>
+
+        <div class="card credits-card">
+            <div class="card__body">
+                <div class="credits-info">
+                    <p id="credits-display" class="credits-label">Credits: 5</p>
+                    <p class="credits-sublabel">1 credit per table</p>
+                </div>
+                <div class="credits-actions">
+                    <button class="btn-secondary" id="reset-credits-btn">Reset</button>
+                    <button class="btn-secondary" onclick="window.open('https://ko-fi.com/s/71015c99f4', '_blank')">Buy More</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card promo-card">
+            <div class="card__header">
+                <h4>Redeem Promo Code</h4>
+            </div>
+            <div class="card__body">
+                <input type="text" class="promo-input" id="promo-code-input" placeholder="Enter promo code" maxlength="10">
+                <button class="promo-btn" id="redeem-promo-btn">Redeem</button>
+            </div>
+        </div>
+
+        <div class="card admin-panel" id="admin-panel">
+            <div class="card__header">
+                <h4>Admin Panel</h4>
+            </div>
+            <div class="card__body">
+                <div class="admin-input-group">
+                    <input type="number" class="admin-input" id="generate-credits-input" placeholder="Credits" min="1" max="100">
+                    <button class="admin-btn" id="generate-code-btn">Generate Code</button>
+                </div>
+                <div class="admin-input-group">
+                    <input type="text" class="admin-input" id="add-code-input" placeholder="Custom Code" maxlength="10">
+                    <input type="number" class="admin-input" id="add-credits-input" placeholder="Credits" min="1" max="100">
+                    <button class="admin-btn" id="add-code-btn">Add Code</button>
+                </div>
+                <div class="admin-input-group">
+                    <button class="admin-btn list-codes-btn" id="list-codes-btn">List Codes</button>
+                </div>
+                <div class="codes-list" id="codes-list"></div>
+                <div class="admin-result" id="admin-result"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card__body">
+                <div class="setting-row">
+                    <label for="mailer-toggle">Email Compatibility</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="mailer-toggle" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card" id="link-card" style="display: none;">
+            <div class="card__header">
+                <h4>Edit Links</h4>
+            </div>
+            <div class="card__body" id="link-list"></div>
+        </div>
+
+        <div class="card" id="gif-card" style="display: none;">
+            <div class="card__header">
+                <h4>Upload GIFs</h4>
+            </div>
+            <div class="card__body" id="gif-list"></div>
+        </div>
+
+        <div class="status-area">
+            <div class="progress-bar">
+                <div class="progress-bar__fill" id="progress-fill"></div>
+            </div>
+            <div class="status-text" id="status-text">Ready to export.</div>
+        </div>
+
+        <footer class="footer">
+            <button id="export-btn">Export Selection</button>
+        </footer>
+    </div>
+
+    <div class="reset-modal" id="reset-modal">
+        <div class="reset-modal-content">
+            <div class="reset-modal-title">Enter Reset Code</div>
+            <input type="text" class="reset-modal-input" id="reset-code-input" placeholder="Enter code" maxlength="10">
+            <div class="reset-modal-buttons">
+                <button class="reset-modal-btn cancel" id="reset-cancel-btn">Cancel</button>
+                <button class="reset-modal-btn reset" id="reset-submit-btn">Reset</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+    (() => {
+        const exportBtn = document.getElementById('export-btn');
+        const statusText = document.getElementById('status-text');
+        const progressFill = document.getElementById('progress-fill');
+        const mailerToggle = document.getElementById('mailer-toggle');
+        const gifCard = document.getElementById('gif-card');
+        const gifList = document.getElementById('gif-list');
+        const linkCard = document.getElementById('link-card');
+        const linkList = document.getElementById('link-list');
+        const creditsDisplay = document.getElementById('credits-display');
+        const resetCreditsBtn = document.getElementById('reset-credits-btn');
+        const resetModal = document.getElementById('reset-modal');
+        const resetCodeInput = document.getElementById('reset-code-input');
+        const resetCancelBtn = document.getElementById('reset-cancel-btn');
+        const resetSubmitBtn = document.getElementById('reset-submit-btn');
+        const promoCodeInput = document.getElementById('promo-code-input');
+        const redeemPromoBtn = document.getElementById('redeem-promo-btn');
+        const adminPanel = document.getElementById('admin-panel');
+        const generateCreditsInput = document.getElementById('generate-credits-input');
+        const generateCodeBtn = document.getElementById('generate-code-btn');
+        const addCodeInput = document.getElementById('add-code-input');
+        const addCreditsInput = document.getElementById('add-credits-input');
+        const addCodeBtn = document.getElementById('add-code-btn');
+        const adminResult = document.getElementById('admin-result');
+        const listCodesBtn = document.getElementById('list-codes-btn');
+        const codesList = document.getElementById('codes-list');
+        const BASE_HEIGHT = 1200;
+        const UI_WIDTH = 500;
+        let exportData = {};
+        let uploadedGifs = {};
+        let currentCredits = 5;
+        let isAdminMode = false;
+
+        function updateCreditsDisplay(balance) {
+            currentCredits = balance;
+            creditsDisplay.textContent = `Credits: ${balance}`;
+            if (balance < 1) {
+                creditsDisplay.classList.add('credits-low');
+            } else {
+                creditsDisplay.classList.remove('credits-low');
+            }
+        }
+
+        function handleListCodes() {
+            updateStatus('Fetching promo codes...', 50);
+            listCodesBtn.disabled = true;
+            parent.postMessage({ pluginMessage: { type: 'list-codes' } }, '*');
+        }
+
+        function updateStatus(message, progress = -1) {
+            statusText.textContent = message;
+            if (progress >= 0) {
+                progressFill.style.width = `${progress}%`;
+            } else {
+                progressFill.style.width = '0%';
+            }
+        }
+
+        function showResetModal() {
+            resetModal.style.display = 'flex';
+            resetCodeInput.value = '';
+            resetCodeInput.focus();
+        }
+
+        function hideResetModal() {
+            resetModal.style.display = 'none';
+        }
+
+        function handleResetSubmit() {
+            const code = resetCodeInput.value.trim();
+            if (code === '') {
+                updateStatus('Please enter a code.', 0);
+                return;
+            }
+            updateStatus('Resetting credits...', 50);
+            parent.postMessage({ pluginMessage: { type: 'reset-credits', code: code } }, '*');
+            hideResetModal();
+        }
+
+        function handleRedeemPromo() {
+            const code = promoCodeInput.value.trim();
+            if (code === '') {
+                updateStatus('Please enter a promo code or admin secret.', 0);
+                return;
+            }
+            updateStatus('Processing code...', 50);
+            redeemPromoBtn.disabled = true;
+            parent.postMessage({ pluginMessage: { type: 'check-code', code: code } }, '*');
+        }
+
+        function handleGenerateCode() {
+            const credits = parseInt(generateCreditsInput.value);
+            if (isNaN(credits) || credits < 1 || credits > 100) {
+                updateStatus('Please enter a valid number of credits (1-100).', 0);
+                return;
+            }
+            updateStatus('Generating promo code...', 50);
+            generateCodeBtn.disabled = true;
+            parent.postMessage({ pluginMessage: { type: 'admin-generate-code', credits: credits } }, '*');
+        }
+
+        function handleAddCode() {
+            const code = addCodeInput.value.trim();
+            const credits = parseInt(addCreditsInput.value);
+            if (code === '' || code.length > 10) {
+                updateStatus('Please enter a valid code (up to 10 characters).', 0);
+                return;
+            }
+            if (isNaN(credits) || credits < 1 || credits > 100) {
+                updateStatus('Please enter a valid number of credits (1-100).', 0);
+                return;
+            }
+            updateStatus('Adding promo code...', 50);
+            addCodeBtn.disabled = true;
+            parent.postMessage({ pluginMessage: { type: 'admin-add-code', code: code, credits: credits } }, '*');
+        }
+
+        function resetButton() {
+            exportBtn.disabled = false;
+            exportBtn.textContent = 'Export Selection';
+            linkCard.style.display = 'none';
+            linkList.innerHTML = '';
+            gifCard.style.display = 'none';
+            gifList.innerHTML = '';
+            updateStatus('Ready to export.', 0);
+            exportData = {};
+            uploadedGifs = {};
+            exportBtn.onclick = handleExportClick;
+            const newHeight = Math.ceil(document.body.scrollHeight) + 20;
+            parent.postMessage({ pluginMessage: { type: 'resize', width: UI_WIDTH, height: newHeight } }, '*');
+        }
+
+function handleExportClick() {
+    exportBtn.disabled = true;
+    exportBtn.textContent = 'Processing...';
+    updateStatus('Starting export...', 5);
+    
+    const useEmailCompatibility = document.getElementById('mailer-toggle').checked;
+    parent.postMessage({ 
+        pluginMessage: { 
+            type: 'export-selection', 
+            useTableLayout: true,
+            useEmailCompatibility: useEmailCompatibility // Send the compatibility flag
+        } 
+    }, '*');
+}
+
+        function updateButtonState() {
+            const needsGifs = exportData.gifPlaceholders && exportData.gifPlaceholders.length > 0;
+            const allGifsUploaded = needsGifs ? Object.keys(uploadedGifs).length === exportData.gifPlaceholders.length : true;
+            if (!allGifsUploaded) {
+                exportBtn.textContent = 'Upload Required GIFs';
+                exportBtn.disabled = true;
+            } else {
+                exportBtn.textContent = 'Confirm & Download ZIP';
+                exportBtn.onclick = packageAndDownload;
+                exportBtn.disabled = false;
+            }
+        }
+
+        function renderLinkEditors(placeholders, assets) {
+            linkCard.style.display = 'block';
+            linkList.innerHTML = '';
+            const assetsMap = new Map(assets.map(a => [a.name, a.data]));
+            placeholders.forEach(p => {
+                const editorItem = document.createElement('div');
+                editorItem.className = 'link-editor-item';
+                const previewData = assetsMap.get(p.previewAssetName);
+                if (!previewData) return;
+                const blob = new Blob([previewData], { type: 'image/png' });
+                const imageUrl = URL.createObjectURL(blob);
+                editorItem.innerHTML = `<div class="link-preview"><img src="${imageUrl}" alt="Link preview"></div><div><input type="text" class="link-input" id="link-input-${p.id}" value="${p.originalUrl}" placeholder="https://example.com"></div>`;
+                linkList.appendChild(editorItem);
+            });
+        }
+
+        function renderGifUploaders(placeholders) {
+            gifCard.style.display = 'block';
+            gifList.innerHTML = '';
+            placeholders.forEach(p => {
+                const uploaderItem = document.createElement('div');
+                uploaderItem.className = 'gif-uploader-item';
+                uploaderItem.innerHTML = `<span class="label" title="${p.id}.gif">${p.id}.gif</span><button class="upload-button" id="upload-btn-${p.id}">Upload</button><input type="file" id="gif-input-${p.id}" accept=".gif" style="display: none;">`;
+                gifList.appendChild(uploaderItem);
+                const uploadButton = document.getElementById(`upload-btn-${p.id}`);
+                const fileInput = document.getElementById(`gif-input-${p.id}`);
+                uploadButton.addEventListener('click', () => fileInput.click());
+                fileInput.addEventListener('change', (event) => handleGifUpload(event, p.id));
+            });
+        }
+
+        function handleGifUpload(event, gifId) {
+            const file = event.target.files[0];
+            if (!file || file.type !== 'image/gif') {
+                updateStatus(`Error: Please upload a .gif file.`, 0);
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                uploadedGifs[gifId] = e.target.result;
+                const uploadButton = document.getElementById(`upload-btn-${gifId}`);
+                uploadButton.innerHTML = '✓ Uploaded';
+                uploadButton.classList.add('status-uploaded');
+                updateStatus(`Uploaded '${gifId}.gif'`);
+                updateButtonState();
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // --- Email Compatibility Converter (Full Implementation) ---
+// --- Fixed Email Compatibility Converter ---
+function convertToEmailCompatible(html) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+
+    /* ---- detect container width ---------------------------- */
+    const mainContainer = doc.querySelector('table[width]');
+    let containerWidth = '600';
+    if (mainContainer) {
+        const attrW = mainContainer.getAttribute('width');
+        const styleW = mainContainer.getAttribute('style')?.match(/width\s*:\s*(\d+)px/);
+        containerWidth = attrW || (styleW ? styleW[1] : '600');
+    }
+    const relativeDiv = doc.querySelector('div[style*="position:relative"]');
+    if (!relativeDiv) throw new Error('No relative container found');
+
+    /* Border adjustment */
+    const borderWidth = 1;
+    const innerWidth = parseInt(containerWidth) - 2 * borderWidth;
+
+    /* ---- collect absolutely-positioned tables --------------------- */
+    const allTables = Array.from(relativeDiv.querySelectorAll('table'));
+    const positionedTables = allTables.filter(t => {
+        const s = (t.getAttribute('style') || '').toLowerCase();
+        return /position\s*:\s*absolute/i.test(s);
+    });
+
+    const positionedElements = [];
+    let minHeightNeeded = 0;
+
+    positionedTables.forEach(table => {
+        const style = table.getAttribute('style') || '';
+        const top = parseInt(extractProp(style, 'top') || '0');
+        const left = parseInt(extractProp(style, 'left') || '0');
+        const width = parseInt((extractProp(style, 'width') || innerWidth).replace(/[^\d]/g, ''));
+
+        // Extract alignment from the original table's TD
+        const td = table.querySelector('td');
+        const tdStyle = td ? (td.getAttribute('style') || '') : '';
+        const textAlign = extractProp(tdStyle, 'text-align') || 'left';
+        const verticalAlign = extractProp(tdStyle, 'vertical-align') || 'top';
+
+        // Clean positioning but preserve other styles including text alignment
+        const cleaned = cleanStyle(style, ['position','top','left','width','height']);
+        
+        // Preserve the original table's alignment in the cleaned style
+        table.setAttribute('style', cleaned);
+        if (td) {
+            // Keep the original TD alignment
+            td.setAttribute('style', tdStyle);
+        }
+
+        let el = table;
+        const parent = table.parentNode;
+        let isLinkWrapper = false;
+        
+        // Check if wrapped in link and handle it properly
+        if (parent && parent.tagName === 'A' && parent.getAttribute('href')) {
+            el = parent;
+            isLinkWrapper = true;
+            // Preserve link styling
+            const linkStyle = parent.getAttribute('style') || '';
+            parent.setAttribute('style', linkStyle);
+        }
+        
+        const elHeight = getElementHeight(el);
+        const bottomEdge = top + elHeight;
+        if (bottomEdge > minHeightNeeded) minHeightNeeded = bottomEdge;
+
+        positionedElements.push({
+            el, 
+            top, 
+            left, 
+            width: Math.min(width, innerWidth), 
+            height: elHeight,
+            textAlign,
+            verticalAlign,
+            isLinkWrapper
+        });
+    });
+
+    // sort top→left
+    positionedElements.sort((a,b) => a.top - b.top || a.left - b.left);
+
+    // Final height with padding
+    let containerHeight = minHeightNeeded + 2 * borderWidth + 20;
+    const innerHeight = containerHeight - 2 * borderWidth;
+
+    return buildEmailStructure(containerWidth, containerHeight, innerWidth, innerHeight, positionedElements, doc);
+}
+
+/* -------------------------------------------------------------
+   Enhanced Utility Helpers
+   ------------------------------------------------------------- */
+function cleanStyle(styleStr, propsToRemove) {
+    if (!styleStr) return '';
+    const rules = styleStr.split(';').map(r => r.trim()).filter(r => r);
+    const cleaned = rules.map(rule => {
+        const parts = rule.split(':');
+        if (parts.length < 2) return null;
+        const prop = parts[0].trim().toLowerCase();
+        const val  = parts.slice(1).join(':').trim();
+        
+        // Don't remove text-align, vertical-align, or other important styles
+        if (propsToRemove.includes(prop) && !['text-align', 'vertical-align', 'white-space', 'line-height'].includes(prop)) {
+            return null;
+        }
+        return `${parts[0].trim()}:${val}`;
+    }).filter(Boolean);
+    return cleaned.join('; ') + (cleaned.length ? ';' : '');
+}
+
+function extractProp(styleStr, prop) {
+    const m = styleStr.match(new RegExp(`${prop}\\s*:\\s*([^;]+)`, 'i'));
+    return m ? m[1].trim() : null;
+}
+
+// Enhanced height calculation
+function getElementHeight(el) {
+    const style = el.getAttribute('style') || '';
+    let height = parseInt(extractProp(style, 'height') || '0');
+    if (!height) {
+        const serialized = new XMLSerializer().serializeToString(el);
+        const heightAttrMatch = serialized.match(/height\s*=\s*"(\d+)"/i);
+        height = heightAttrMatch ? parseInt(heightAttrMatch[1]) : 0;
+    }
+    // Add padding if present
+    const padTop = parseInt(extractProp(style, 'padding-top') || '0');
+    const padBottom = parseInt(extractProp(style, 'padding-bottom') || '0');
+    return Math.max(height, 1) + padTop + padBottom; // Ensure minimum height
+}
+
+/* -------------------------------------------------------------
+   Enhanced Email Structure Builder
+   ------------------------------------------------------------- */
+function buildEmailStructure(containerWidth, containerHeight, innerWidth, innerHeight, positionedElements, originalDoc) {
+    const serialize = node => new XMLSerializer().serializeToString(node).replace(/xmlns="[^"]*"/g, '');
+
+    let html = `<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="x-apple-disable-message-reformatting">
+<title>Mailer</title>
+<!--[if gte mso 9]>
+<xml>
+  <o:OfficeDocumentSettings>
+    <o:AllowPNG/>
+    <o:PixelsPerInch>96</o:PixelsPerInch>
+  </o:OfficeDocumentSettings>
+</xml>
+<![endif]-->
+<style>
+    body{margin:0;padding:0;background:transparent;}
+    table{border-collapse:collapse;mso-table-lspace:0pt;mso-table-rspace:0pt;}
+    td{padding:0;vertical-align:top;}
+    img{-ms-interpolation-mode:bicubic;border:0;display:block;}
+    .email-container span{line-height:1.2 !important;}
+    .email-container td{vertical-align:top !important; text-align:inherit !important;}
+    .email-container a{display:block !important;text-decoration:none !important;pointer-events:auto !important;}
+    .email-container { border: 1px solid #dddddd !important; box-sizing: border-box; }
+    .email-container td, .email-container table { text-align: inherit !important; vertical-align: inherit !important; }
+    
+    /* Fix for text elements to preserve original alignment */
+    .text-content table { width: 100% !important; }
+    .text-content td { 
+        text-align: inherit !important; 
+        vertical-align: inherit !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+    
+    /* Fix for clickable areas */
+    .clickable-area {
+        display: block !important;
+        width: 100% !important;
+        height: 100% !important;
+        text-decoration: none !important;
+    }
+    
+    @media screen and (max-width:480px){
+        .email-container td{padding:0 10px !important;text-align:center !important;}
+        .email-container img{width:100% !important;height:auto !important;}
+    }
+</style>
+</head>
+<body style="margin:0;padding:0;background:transparent;">
+<center>
+<!--[if mso]>
+<table role="presentation" border="0" cellpadding="0" cellspacing="0" width="${containerWidth}"><tr><td>
+<![endif]-->
+<table role="presentation" border="0" cellpadding="0" cellspacing="0" width="${containerWidth}"
+       style="width:${containerWidth}px;height:${containerHeight}px;">
+  <tr>
+    <td bgcolor="#ffffff" width="${containerWidth}" height="${containerHeight}"
+        valign="top" class="email-container"
+        style="position:relative;background:#fff;border:1px solid #dddddd;box-sizing:border-box;width:${innerWidth}px;height:${innerHeight}px;">
+      <!--[if gte mso 9]>
+      <v:rect xmlns:v="urn:schemas-microsoft-com:vml" fill="true" stroke="false"
+              style="width:${containerWidth}px;height:${containerHeight}px;">
+        <v:fill type="frame" src="" color="#ffffff"/>
+        <v:textbox inset="0,0,0,0">
+      <![endif]-->
+
+      ${positionedElements.map(({el, top, left, width, textAlign, verticalAlign, isLinkWrapper}) => {
+          const rightPad = innerWidth - left - width;
+          let innerHTML = serialize(el);
+          
+          // Add text-content class to text elements for better alignment
+          if (innerHTML.includes('span style') && !innerHTML.includes('img')) {
+              innerHTML = innerHTML.replace(/<table/g, '<table class="text-content"');
+          }
+
+          const alignStyle = `text-align:${textAlign}; vertical-align:${verticalAlign};`;
+
+          if (isLinkWrapper) {
+              return `
+      <table role="presentation" border="0" cellpadding="0" cellspacing="0"
+             style="position:absolute;top:${top}px;left:${left}px;width:${width}px;height:${getElementHeight(el)}px;">
+        <tr>
+          <td style="padding:0; ${alignStyle}">
+            ${innerHTML}
+          </td>
+        </tr>
+      </table>`;
+          } else {
+              return `
+      <table role="presentation" border="0" cellpadding="0" cellspacing="0"
+             style="position:absolute;top:${top}px;left:0;width:${innerWidth}px;">
+        <tr>
+          <td width="${left}" style="width:${left}px;"></td>
+          <td width="${width}" style="width:${width}px; ${alignStyle}">${innerHTML}</td>
+          <td width="${rightPad}" style="width:${rightPad}px;"></td>
+        </tr>
+      </table>`;
+          }
+      }).join('\n')}
+
+      <!--[if gte mso 9]>
+        </v:textbox>
+      </v:rect>
+      <![endif]-->
+    </td>
+  </tr>
+</table>
+<!--[if mso]>
+</td></tr></table>
+<![endif]-->
+</center>
+</body>
+</html>`;
+    return html;
+}
+       async function packageAndDownload() {
+    exportBtn.disabled = true;
+    exportBtn.textContent = 'Zipping...';
+    updateStatus('Packaging files into a ZIP...', 95);
+
+    let finalHtmlString = exportData.html;
+
+    // Apply email compatibility conversion if toggle is ON
+    const useEmailCompatibility = document.getElementById('mailer-toggle').checked;
+    if (useEmailCompatibility) {
+        try {
+            updateStatus('Applying email compatibility conversion...', 90);
+            finalHtmlString = convertToEmailCompatible(finalHtmlString);
+            updateStatus('Email conversion completed!', 95);
+        } catch (error) {
+            updateStatus(`Email conversion failed: ${error.message}`, 0);
+            console.error('Email conversion error:', error);
+            // Continue with original HTML if conversion fails
+        }
+    }
+
+    // Process link placeholders (existing code)
+    if (exportData.linkPlaceholders) {
+        exportData.linkPlaceholders.forEach(p => {
+            const input = document.getElementById(`link-input-${p.id}`);
+            let url = input ? input.value.trim() : p.originalUrl;
+            if (url && !url.startsWith('http')) { url = `https://${url}`; }
+
+            const placeholderRegex = new RegExp(`<div data-link-placeholder-id="${p.id}">([\\s\\S]*?)<\\/div>`);
+            const match = finalHtmlString.match(placeholderRegex);
+            
+            if (match) {
+                const contentHtml = match[1];
+                const finalLink = `<a href="${url}" target="_blank" style="text-decoration:none; color:inherit; display: block;">${contentHtml}</a>`;
+                finalHtmlString = finalHtmlString.replace(match[0], finalLink);
+            }
+        });
+    }
+
+    const zip = new JSZip();
+    zip.file('index.html', finalHtmlString);
+    const imagesFolder = zip.folder('images');
+    if (exportData.assets) {
+        exportData.assets.forEach(asset => imagesFolder.file(asset.name, asset.data));
+    }
+    for (const gifId in uploadedGifs) {
+        imagesFolder.file(`${gifId}.gif`, uploadedGifs[gifId]);
+    }
+    
+    try {
+        const blob = await zip.generateAsync({ type: 'blob' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${exportData.filename}.zip`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        updateStatus('✅ Download started!', 100);
+    } catch(err) {
+        updateStatus(`Error creating ZIP: ${err.message}`, 0);
+    } finally {
+        setTimeout(resetButton, 2000);
+    }
+}
+
+         window.onmessage = event => {
+    const msg = event.data.pluginMessage;
+    if (!msg) {
+        updateStatus('Error: No plugin message received.', 0);
+        redeemPromoBtn.disabled = false;
+        generateCodeBtn.disabled = false;
+        addCodeBtn.disabled = false;
+        listCodesBtn.disabled = false;
+        exportBtn.textContent = 'Export Selection'; // Reset export button on no message
+        exportBtn.disabled = false; // Re-enable export button
+        return;
+    }
+
+    try {
+        if (msg.type === 'credits') {
+            updateCreditsDisplay(msg.balance);
+            updateStatus('Ready to export.', 0);
+        } else if (msg.type === 'admin-access-granted') {
+            isAdminMode = !isAdminMode;
+            adminPanel.classList.toggle('active', isAdminMode);
+            promoCodeInput.value = '';
+            redeemPromoBtn.disabled = false;
+            updateStatus(isAdminMode ? 'Admin panel activated.' : 'Admin panel hidden.', 0);
+            const newHeight = Math.ceil(document.body.scrollHeight) + 20;
+            parent.postMessage({ pluginMessage: { type: 'resize', width: UI_WIDTH, height: newHeight } }, '*');
+        } else if (msg.type === 'redeem-success') {
+            updateCreditsDisplay(msg.balance);
+            updateStatus('✅ Promo code redeemed successfully!', 100);
+            redeemPromoBtn.disabled = false;
+            promoCodeInput.value = '';
+            setTimeout(() => { updateStatus('Ready to export.', 0); }, 3000);
+        } else if (msg.type === 'code-generated') {
+            adminResult.textContent = `Generated Code: ${msg.code} (${msg.credits} credits)`;
+            generateCodeBtn.disabled = false;
+            generateCreditsInput.value = '';
+            updateStatus('✅ Promo code generated!', 100);
+            setTimeout(() => { updateStatus('Ready to export.', 0); }, 3000);
+        } else if (msg.type === 'code-added') {
+            adminResult.textContent = `Added Code: ${msg.code}`;
+            addCodeBtn.disabled = false;
+            addCodeInput.value = '';
+            addCreditsInput.value = '';
+            updateStatus('✅ Promo code added!', 100);
+            setTimeout(() => { updateStatus('Ready to export.', 0); }, 3000);
+        } else if (msg.type === 'list-codes') {
+            codesList.innerHTML = '';
+            if (msg.codes.length === 0) {
+                codesList.innerHTML = '<p>No active promo codes.</p>';
+            } else {
+                msg.codes.forEach(({ code, credits }) => {
+                    const p = document.createElement('p');
+                    p.textContent = `${code}: ${credits} credits`;
+                    codesList.appendChild(p);
+                });
+            }
+            listCodesBtn.disabled = false;
+            updateStatus('✅ Promo codes retrieved!', 100);
+            setTimeout(() => { updateStatus('Ready to export.', 0); }, 3000);
+            const newHeight = Math.ceil(document.body.scrollHeight) + 20;
+            parent.postMessage({ pluginMessage: { type: 'resize', width: UI_WIDTH, height: newHeight } }, '*');
+        } else if (msg.type === 'progress') {
+            updateStatus(msg.message, 25);
+        } else if (msg.type === 'error') {
+            updateStatus(`Error: ${msg.message}`, 0);
+            redeemPromoBtn.disabled = false;
+            generateCodeBtn.disabled = false;
+            addCodeBtn.disabled = false;
+            listCodesBtn.disabled = false;
+            exportBtn.textContent = 'Export Selection'; // Reset button text
+            exportBtn.disabled = false; // Re-enable button
+            setTimeout(() => { updateStatus('Ready to export.', 0); }, 3000);
+        } else if (msg.type === 'export-result') {
+            updateStatus('Figma processing complete.', 85);
+            exportData = msg;
+            const { linkPlaceholders, gifPlaceholders, previewAssets } = msg;
+
+            const needsLinks = linkPlaceholders && linkPlaceholders.length > 0;
+            const needsGifs = gifPlaceholders && gifPlaceholders.length > 0;
+
+            if (needsLinks) renderLinkEditors(linkPlaceholders, previewAssets || []);
+            if (needsGifs) renderGifUploaders(gifPlaceholders);
+            
+            updateButtonState();
+
+            if (!needsGifs && !needsLinks) {
+                packageAndDownload();
+            }
+            
+            setTimeout(() => {
+                const newHeight = Math.ceil(document.body.scrollHeight) + 20;
+                parent.postMessage({ pluginMessage: { type: 'resize', width: UI_WIDTH, height: newHeight } }, '*');
+            }, 100);
+        } else {
+            updateStatus(`Error: Unknown message type '${msg.type}'.`, 0);
+            redeemPromoBtn.disabled = false;
+            generateCodeBtn.disabled = false;
+            addCodeBtn.disabled = false;
+            listCodesBtn.disabled = false;
+            exportBtn.textContent = 'Export Selection'; // Reset button on unknown message
+            exportBtn.disabled = false; // Re-enable button
+            setTimeout(() => { updateStatus('Ready to export.', 0); }, 3000);
+        }
+    } catch (error) {
+        updateStatus(`UI error: ${error.message}`, 0);
+        redeemPromoBtn.disabled = false;
+        generateCodeBtn.disabled = false;
+        addCodeBtn.disabled = false;
+        listCodesBtn.disabled = false;
+        exportBtn.textContent = 'Export Selection'; // Reset button on UI error
+        exportBtn.disabled = false; // Re-enable button
+        setTimeout(() => { updateStatus('Ready to export.', 0); }, 3000);
+    }
+};
+        resetCreditsBtn.addEventListener('click', showResetModal);
+        resetCancelBtn.addEventListener('click', hideResetModal);
+        resetSubmitBtn.addEventListener('click', handleResetSubmit);
+        resetCodeInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                handleResetSubmit();
+            }
+        });
+        redeemPromoBtn.addEventListener('click', handleRedeemPromo);
+        promoCodeInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                handleRedeemPromo();
+            }
+        });
+        generateCodeBtn.addEventListener('click', handleGenerateCode);
+        generateCreditsInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                handleGenerateCode();
+            }
+        });
+        addCodeBtn.addEventListener('click', handleAddCode);
+        addCodeInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                handleAddCode();
+            }
+        });
+        addCreditsInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                handleAddCode();
+            }
+        });
+        listCodesBtn.addEventListener('click', handleListCodes);
+
+        parent.postMessage({ pluginMessage: { type: 'get-credits' } }, '*');
+        
+        exportBtn.onclick = handleExportClick;
+
+        parent.postMessage({ pluginMessage: { type: 'get-credits' } }, '*');
+    })();
+</script>
+</body>
+</html>
